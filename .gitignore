@@ -16,6 +16,7 @@ MDK-ARM/*
 !MDK-ARM/*.uvmpw
 !MDK-ARM/RTE/*
 !MDK-ARM/*.sct
+!MDK-ARM/*.s
 
 # https://stackoverflow.com/a/39983457
 # IAR Settings, ignore except the following
