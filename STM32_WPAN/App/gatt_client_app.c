@@ -32,6 +32,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stm32wbaxx_nucleo.h"
+#include "stm32_timer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -104,6 +105,8 @@ typedef struct
   uint16_t ControlPointCharHdl;
   uint16_t ControlPointValueHdl;
   uint16_t ControlPointDescHdl;
+  
+  UTIL_TIMER_Object_t disconnectTimerId;
 /* USER CODE END BleClientAppContext_t */
 
 }BleClientAppContext_t;
@@ -148,6 +151,7 @@ static void client_discover_all(void);
 static void gatt_cmd_resp_release(void);
 static void gatt_cmd_resp_wait(void);
 /* USER CODE BEGIN PFP */
+static void GATT_CLIENT_APP_Disconnect(void *arg);
 static void HR_Body_Sensor_Location_read_char(void);
 static void HR_Control_Point_write_char(void);
 static void HR_Measurement_toggle_notification(void);
@@ -168,6 +172,8 @@ void GATT_CLIENT_APP_Init(void)
   for(index = 0; index < BLE_CFG_CLT_MAX_NBR_CB; index++)
   {
     a_ClientContext[index].connStatus = APP_BLE_IDLE;
+    
+    UTIL_TIMER_Create(&a_ClientContext[index].disconnectTimerId, 100, UTIL_TIMER_ONESHOT, &GATT_CLIENT_APP_Disconnect, NULL);
   }
 
   /* Register the event handler to the BLE controller */
@@ -400,7 +406,10 @@ uint8_t GATT_CLIENT_APP_Procedure_Gatt(uint8_t index, ProcGattId_t GattProcId)
 }
 
 /* USER CODE BEGIN FD */
-
+static void GATT_CLIENT_APP_Disconnect(void *arg)
+{
+  UTIL_SEQ_SetTask(1u << CFG_TASK_DISCONN_DEV_ID, CFG_SEQ_PRIO_0);
+}
 /* USER CODE END FD */
 
 /*************************************************************
@@ -473,11 +482,28 @@ static SVCCTL_EvtAckStatus_t Event_Handler(void *Event)
             if (a_ClientContext[index].connHdl == p_evt_rsp->Connection_Handle)
             {
               gatt_cmd_resp_release();
+              LOG_INFO_APP(" ACI_GATT_PROC_COMPLETE_VSEVT_CODE - Connection Handle: %04X, Error Code: %02X\n", p_evt_rsp->Connection_Handle, p_evt_rsp->Error_Code);
               break;
             }
           }
         }
         break;/* ACI_GATT_PROC_COMPLETE_VSEVT_CODE */
+        case ACI_GATT_PROC_TIMEOUT_VSEVT_CODE:
+        {
+          aci_gatt_proc_timeout_event_rp0 *p_evt_rsp = (void*)p_blecore_evt->data;
+          
+          uint8_t index;
+          for (index = 0 ; index < BLE_CFG_CLT_MAX_NBR_CB ; index++)
+          {
+            if (a_ClientContext[index].connHdl == p_evt_rsp->Connection_Handle)
+            {
+              LOG_INFO_APP(" ACI_GATT_PROC_TIMEOUT_VSEVT_CODE - Connection Handle: %04X\n", p_evt_rsp->Connection_Handle);
+              UTIL_TIMER_Start(&a_ClientContext[index].disconnectTimerId);
+              break;
+            }
+          }
+        }
+        break;/* ACI_GATT_PROC_TIMEOUT_VSEVT_CODE */
         case ACI_GATT_TX_POOL_AVAILABLE_VSEVT_CODE:
         {
           aci_att_exchange_mtu_resp_event_rp0 *tx_pool_available;
@@ -487,7 +513,7 @@ static SVCCTL_EvtAckStatus_t Event_Handler(void *Event)
 
           /* USER CODE END ACI_GATT_TX_POOL_AVAILABLE_VSEVT_CODE */
         }
-        break;/* ACI_GATT_TX_POOL_AVAILABLE_VSEVT_CODE*/
+        break;/* ACI_GATT_TX_POOL_AVAILABLE_VSEVT_CODE */
         case ACI_ATT_EXCHANGE_MTU_RESP_VSEVT_CODE:
         {
           aci_att_exchange_mtu_resp_event_rp0 *exchange_mtu_resp;
@@ -498,7 +524,7 @@ static SVCCTL_EvtAckStatus_t Event_Handler(void *Event)
 
           /* USER CODE END ACI_ATT_EXCHANGE_MTU_RESP_VSEVT_CODE */
         }
-        break;/* ACI_ATT_READ_RESP_VSEVT_CODE*/
+        break;/* ACI_ATT_EXCHANGE_MTU_RESP_VSEVT_CODE */
         case ACI_ATT_READ_RESP_VSEVT_CODE:
         {
           aci_att_read_resp_event_rp0 *read_rsp;
@@ -512,7 +538,7 @@ static SVCCTL_EvtAckStatus_t Event_Handler(void *Event)
           }
           LOG_INFO_APP("\n");
         }
-        break;
+        break;/* ACI_ATT_READ_RESP_VSEVT_CODE */
 
         default:
           break;
@@ -1058,33 +1084,26 @@ static void HR_Control_Point_write_char(void)
   uint8_t index = 0;
   tBleStatus ret;
 
-  if (HRButtonData.write == 0x00)
-  {
-    HRButtonData.write = 0x01;
-  }
-  else
-  {
-    HRButtonData.write = 0x00;
-  }
+  HRButtonData.write = 0x01;
 
   for(index = 0; index < BLE_CFG_CLT_MAX_NBR_CB; index++)
   {
     if (a_ClientContext[index].state != GATT_CLIENT_APP_IDLE)
-    {
-      ret = aci_gatt_write_without_resp(a_ClientContext[index].connHdl,
+    {      
+      ret = aci_gatt_write_char_value(a_ClientContext[index].connHdl,
                                         a_ClientContext[index].ControlPointValueHdl,
-                                        2,
+                                        1,
                                         (uint8_t *)&HRButtonData);
 
       if (ret != BLE_STATUS_SUCCESS)
       {
-        LOG_INFO_APP("aci_gatt_write_without_resp failed, connHdl=0x%04X, ValueHdl=0x%04X\n",
+        LOG_INFO_APP("aci_gatt_write_char_value failed, connHdl=0x%04X, ValueHdl=0x%04X\n",
                 a_ClientContext[index].connHdl,
                 a_ClientContext[index].ControlPointValueHdl);
       }
       else
       {
-        LOG_INFO_APP("aci_gatt_write_without_resp success, connHdl=0x%04X, ValueHdl=0x%04X\n",
+        LOG_INFO_APP("aci_gatt_write_char_value success, connHdl=0x%04X, ValueHdl=0x%04X\n",
                 a_ClientContext[index].connHdl,
                 a_ClientContext[index].ControlPointValueHdl);
         

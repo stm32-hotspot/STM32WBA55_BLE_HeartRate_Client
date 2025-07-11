@@ -217,6 +217,7 @@ static uint8_t HOST_BLE_Init(void);
 /* USER CODE BEGIN PFP */
 static uint8_t analyse_adv_report(hci_le_advertising_report_event_rp0 *p_adv_report);
 static void Connect_Request(void);
+static void Disconnect(void);
 /* USER CODE END PFP */
 
 /* External variables --------------------------------------------------------*/
@@ -274,6 +275,7 @@ void APP_BLE_Init(void)
   }
   /* USER CODE BEGIN APP_BLE_Init_2 */
   UTIL_SEQ_RegTask( 1u << CFG_TASK_CONN_DEV_ID, UTIL_SEQ_RFU, Connect_Request);
+  UTIL_SEQ_RegTask( 1u << CFG_TASK_DISCONN_DEV_ID, UTIL_SEQ_RFU, Disconnect);
   /* USER CODE END APP_BLE_Init_2 */
 
   return;
@@ -1311,6 +1313,11 @@ static void Connect_Request(void)
   }
 
   return;
+}
+
+static void Disconnect(void)
+{
+  APP_BLE_Procedure_Gap_General(PROC_GAP_GEN_CONN_TERMINATE);
 }
 
 /* USER CODE END FD_LOCAL_FUNCTION */

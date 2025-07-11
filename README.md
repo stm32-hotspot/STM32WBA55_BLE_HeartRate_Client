@@ -1,5 +1,7 @@
 # STM32WBA55_BLE_HeartRate_Client
 
+**Author** : [Claudio Vertemara](https://github.com/ClaudioVertemara)
+
 * The STM32WBA55_BLE_HeartRate_Client is based on the BLE_P2PClient application from STM32CubeWBA V1.4.1.
 * This application is an example of a BLE Client for the BLE_HeartRate project from STM32CubeWBA.
 * This project has the following button functionality:
